@@ -15,8 +15,11 @@ namespace littleslam_ros2
 Littleslam::Littleslam()
 : Node("littleslam")
 {
-    declare_parameter("use_odom", false);
-    get_parameter("use_odom", use_odom_);
+    use_odom_ = this->declare_parameter("use_odom", false);
+    // get_parameter("use_odom", use_odom_);
+    source_frame_ = this->declare_parameter("source_frame", "base_link");
+    target_frame_ = this->declare_parameter("target_frame", "odom");
+    topic_scan_ = this->declare_parameter("topic_scan", "scan");
 
     RCLCPP_INFO(this->get_logger(), "use_odom: %d", use_odom_);
 
@@ -34,7 +37,7 @@ Littleslam::Littleslam()
         };
 
     laser_sub_  =
-            create_subscription<sensor_msgs::msg::LaserScan>("scan", 100,
+            create_subscription<sensor_msgs::msg::LaserScan>(topic_scan_, 100,
                 scan_callback);
 
     icp_map_pub_ = create_publisher<sensor_msgs::msg::PointCloud2>("icp_map", 10);
@@ -44,14 +47,18 @@ Littleslam::Littleslam()
     current_pose_pub_ = create_publisher<geometry_msgs::msg::PoseStamped>("current_pose", 10);
 
     timer_ = create_wall_timer(100ms, [this]() { broadcast_littleslam(); });
+
+
+    tfbuffer = std::make_shared<tf2_ros::Buffer>(this->get_clock());
+    listener = std::make_shared<tf2_ros::TransformListener>(*tfbuffer);
 }
 
 bool Littleslam::make_scan2d(Scan2D &scan2d, const sensor_msgs::msg::LaserScan::SharedPtr scan)
 {
 
     if(use_odom_){
-        tf2_ros::Buffer tfbuffer(this->get_clock());
-        tf2_ros::TransformListener listener(tfbuffer);
+        // tf2_ros::Buffer tfbuffer(this->get_clock());
+        // tf2_ros::TransformListener listener(tfbuffer);
 
         tf2::Stamped<tf2::Transform> tr;
 
@@ -62,10 +69,28 @@ bool Littleslam::make_scan2d(Scan2D &scan2d, const sensor_msgs::msg::LaserScan::
                 std::chrono::nanoseconds(time_stamp.nanosec));
             tf2::TimePoint time_out;
 
-            geometry_msgs::msg::TransformStamped tf = tfbuffer.lookupTransform(
-                "/odom", "/base_link", time_point);
+            // JW: debug
+            double seconds = std::chrono::duration<double>(time_point.time_since_epoch()).count();
+            std::cout<<"time_point: "<<seconds<<std::endl;
+            std::cout<<"target_frame_: "<<target_frame_<<std::endl;
+            std::cout<<"source_frame_: "<<source_frame_<<std::endl;
 
-            tf2::fromMsg(tf, tr);
+            std::cout<<"All frames: "<<tfbuffer->allFramesAsString()<<std::endl;
+
+            if (tfbuffer->canTransform(target_frame_, source_frame_, time_point, tf2::durationFromSec(0.1))) {
+                geometry_msgs::msg::TransformStamped tf = tfbuffer->lookupTransform(
+                    target_frame_, source_frame_, time_point);
+                
+                
+
+                tf2::fromMsg(tf, tr);
+            }
+            else{
+                RCLCPP_WARN(this->get_logger(),"Cannot transform %s to %s at time %f",
+                    source_frame_.c_str(), target_frame_.c_str(),
+                    std::chrono::duration<double>(time_point.time_since_epoch()).count());
+                return false;
+            }
         }
         catch (tf2::TransformException &ex) {
             RCLCPP_ERROR(this->get_logger(),"%s",ex.what());
@@ -106,7 +131,7 @@ void Littleslam::broadcast_littleslam()
 
     pcl::PointCloud<pcl::PointXYZ>::Ptr msg(new pcl::PointCloud<pcl::PointXYZ>);
 
-    msg->header.frame_id = "map";
+    msg->header.frame_id = target_frame_; //"map";
     msg->height = msg->width = 1;
     for (auto lp: map_->globalMap) msg->points.push_back(pcl::PointXYZ(lp.x, lp.y, 0));
     msg->width = msg->points.size();
@@ -116,7 +141,7 @@ void Littleslam::broadcast_littleslam()
     icp_map_pub_->publish(cloud);
 
     nav_msgs::msg::Path path;
-    path.header.frame_id = "map";
+    path.header.frame_id = target_frame_; //"map";
     for(auto pos : map_->poses) {
         geometry_msgs::msg::PoseStamped pose;
         pose.pose.position.x = pos.tx;
@@ -131,7 +156,7 @@ void Littleslam::broadcast_littleslam()
         if(pos.tx == map_->lastPose.tx &&
                 pos.ty == map_->lastPose.ty &&
                 pos.th == map_->lastPose.th){
-                pose.header.frame_id = "map";
+                pose.header.frame_id = target_frame_; //"map";
                 current_pose_pub_->publish(pose);
             }
     }

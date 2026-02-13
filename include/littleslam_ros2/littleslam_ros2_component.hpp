@@ -54,6 +54,7 @@ extern "C" {
 
 #include "SlamFrontEnd.h"
 #include "FrameworkCustomizer.h"
+#include<string>
 
 namespace littleslam_ros2
 {
@@ -78,7 +79,17 @@ private:
 
   PointCloudMap *map_;
   
+  // Whether to publish odometry information in tf
   bool use_odom_; 
+
+  std::string source_frame_, target_frame_;
+  std::string topic_scan_; // sensor_msgs::msg::LaserScan topic name 
+
+
+  std::shared_ptr<tf2_ros::Buffer> tfbuffer;
+  std::shared_ptr<tf2_ros::TransformListener> listener;
+
+
 };
 
 } // namespace littleslam_ros2
