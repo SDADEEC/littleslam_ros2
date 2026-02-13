@@ -1,5 +1,12 @@
 # littleslam_ros2
-![dashing](https://github.com/rsasaki0109/littleslam_ros2/workflows/CI/badge.svg)
+
+# Update 2026.02.13
+- Modify `class Littleslam` to allow flexible ros params setting
+- Fix issue when setting `use_odom==True`. Now tf can be properly fetched from buffer
+- Testing result on [Mapping1.bag](https://classes.engineering.wustl.edu/cse550/a02.php)
+  - `use_odom==False` fail
+  - `use_odom==True`, success with gt pose
+
 
 [LittleSLAM](https://github.com/furo-org/LittleSLAM.git) ROS2 wrapper.
 # Install
